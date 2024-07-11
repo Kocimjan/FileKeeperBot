@@ -10,14 +10,14 @@ if not API_TOKEN:
     raise ValueError("No API token provided. Please set the TELEGRAM_BOT_API_TOKEN environment variable.")
 
 bot = telebot.TeleBot(API_TOKEN)
-AID = []
+AID = [906893530, ]
 
 # Словарь для хранения временных данных пользователя
 user_data = {}
-db = database('study_materials.db')
+db = database('materials.db')
 
 # Подключение к базе данных
-conn = sqlite3.connect('study_materials.db', check_same_thread=False)
+conn = sqlite3.connect('materials.db', check_same_thread=False)
 cursor = conn.cursor()
 
 
