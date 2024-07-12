@@ -10,7 +10,7 @@ if not API_TOKEN:
     raise ValueError("No API token provided. Please set the TELEGRAM_BOT_API_TOKEN environment variable.")
 
 bot = telebot.TeleBot(API_TOKEN)
-AID = [906893530, ]
+AID = [906893530, 6690844057]
 
 # Словарь для хранения временных данных пользователя
 user_data = {}
@@ -21,9 +21,9 @@ conn = sqlite3.connect('materials.db', check_same_thread=False)
 cursor = conn.cursor()
 
 
-def get_categories():
-    categories = [category[0] for category in db.execute("SELECT DISTINCT name FROM categories")]
-    return categories
+def get_categories() -> list:
+    if (categories := [category[0] for category in db.execute("SELECT DISTINCT name FROM categories")]):
+        return categories
 
 
 def categories_catalogue(categories):
@@ -32,13 +32,19 @@ def categories_catalogue(categories):
         button_text = category
         markup.add(types.InlineKeyboardButton(button_text, callback_data=button_text + '_ctg'))
     markup.add(types.InlineKeyboardButton('Отмена', callback_data='cancel'))
+    markup.add(types.InlineKeyboardButton('Доб. Категорию', callback_data='add_ctg'))
     return markup
+
 
 
 # Команда /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
+    username = message.from_user.username
+    if not db.execute("SELECT * FROM users WHERE tg_id =?", chat_id):
+        db.execute("INSERT INTO users (tg_id, username) VALUES (?, ?)", chat_id, username)
+        db.commit()
     if chat_id in AID:
         bot.reply_to(message, "Привет! Я бот для хранения файлов. Используй /add для добавления нового материала, "
                               "/list для просмотра всех материалов, и /search для поиска материалов.")
@@ -53,8 +59,9 @@ def send_welcome(message):
 def choose_categories(message):
     chat_id = message.chat.id
     if chat_id in AID:
+        user_data[chat_id] = {}
         markup = categories_catalogue(get_categories())
-        bot.reply_to(chat_id, 'Выберите категорию для материала:', reply_markup=markup)
+        bot.reply_to(message, 'Выберите категорию для материала:', reply_markup=markup)
     else:
         bot.reply_to(message, "Это функция для админов червь блять")
 
@@ -94,12 +101,12 @@ def process_files_step(message):
                                "Вы не добавили ни одного файла. Пожалуйста, добавьте файлы и завершите командой /done.")
             bot.register_next_step_handler(msg, process_files_step)
 
-        cursor.execute("INSERT INTO materials (title, description, user_id) VALUES (?, ?)",
+        cursor.execute("INSERT INTO materials (title, description, user_id) VALUES (?, ?, ?)",
                        (user_data[chat_id]['title'], user_data[chat_id]['description'], chat_id))
         material_id = cursor.lastrowid
 
         for media in user_data[chat_id]['files']:
-            cursor.execute("INSERT INTO files (material_id, file_id) VALUES (?, ?)", (material_id, media.media))
+            cursor.execute("INSERT INTO files (material_id, file_id, user_id) VALUES (?, ?, ?)", (material_id, media.media, chat_id))
 
         conn.commit()
         bot.reply_to(message, "Материал успешно добавлен!")
@@ -110,7 +117,7 @@ def process_files_step(message):
 
 
 # Пагинация для списка материалов
-def generate_materials_markup(page=0, page_size=8):
+def generate_materials_markup(page=0, page_size=2):
     cursor.execute("SELECT id, title FROM materials LIMIT ? OFFSET ?", (page_size, page * page_size))
     materials = cursor.fetchall()
 
@@ -160,6 +167,15 @@ def handle_view_material(call):
     else:
         bot.send_message(call.message.chat.id, "Материал не найден.")
 
+@bot.callback_query_handler(func=lambda call: call.data.endswith('_ctg'))
+def choose_categories_handler(call):
+    chat_id = call.message.chat.id
+    user_data[chat_id]['category'] = call.data.split('_')[0]
+    user_data[chat_id] = {'files': []}
+    msg = bot.reply_to(call.message, "Введите название материала:")
+    bot.register_next_step_handler(msg, process_title_step)
+
+
 
 # Поиск материалов
 @bot.message_handler(commands=['search'])
@@ -186,6 +202,27 @@ def process_search_step(message):
     else:
         bot.reply_to(message, "Ничего не найдено по вашему запросу.")
 
+
+@bot.inline_handler(lambda query: len(query.query) > 0)
+def query_text(inline_query):
+    query = inline_query.query
+    results = []
+
+    cursor.execute("SELECT id, title, description FROM materials WHERE title LIKE ? OR description LIKE ?",
+                   ('%' + query + '%', '%' + query + '%'))
+    materials = cursor.fetchall()
+    for material in materials:
+        title, description = material[1], material[2]
+        results.append(types.InlineQueryResultArticle(
+            id=str(material[0]),
+            title=title,
+            input_message_content=types.InputTextMessageContent(
+                message_text=f"Название: {title}\nОписание: {description}"
+            ),
+            description=description
+        ))
+
+    bot.answer_inline_query(inline_query.id, results)
 
 def печать(value: any) -> None:
     print(value)

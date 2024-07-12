@@ -15,6 +15,11 @@ class database:
             data = self.sql.fetchall()
         if data:
             return data
+        else:
+            return None
+        
+    def commit(self):
+        self.conn.commit()
 
     def close(self):
         self.conn.close()
