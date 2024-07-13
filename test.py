@@ -202,26 +202,32 @@ def process_search_step(message):
     else:
         bot.reply_to(message, "Ничего не найдено по вашему запросу.")
 
-
 @bot.inline_handler(lambda query: len(query.query) > 0)
 def query_text(inline_query):
     query = inline_query.query
     results = []
-
-    cursor.execute("SELECT id, title, description FROM materials WHERE title LIKE ? OR description LIKE ?",
+    
+    cursor.execute("SELECT id, title FROM materials WHERE title LIKE ? OR description LIKE ?",
                    ('%' + query + '%', '%' + query + '%'))
     materials = cursor.fetchall()
+    
     for material in materials:
-        title, description = material[1], material[2]
-        results.append(types.InlineQueryResultArticle(
-            id=str(material[0]),
-            title=title,
-            input_message_content=types.InputTextMessageContent(
-                message_text=f"Название: {title}\nОписание: {description}"
-            ),
-            description=description
-        ))
-
+        material_id, title = material
+        cursor.execute("SELECT file_id FROM files WHERE material_id=?", (material_id,))
+        files = cursor.fetchall()
+        
+        for file in files:
+            file_id = file[0]
+            unique_id = f"{material_id}"  # Изменено для уникальности
+            
+            results.append(types.InlineQueryResultDocument(
+                id=unique_id,
+                title=title,
+                document_url=file_id,  # Используем file_id напрямую
+                mime_type="application/octet-stream",  # Можно изменить в зависимости от типа файла
+                description="Нажмите, чтобы отправить файл"
+            ))
+    
     bot.answer_inline_query(inline_query.id, results)
 
 def печать(value: any) -> None:
